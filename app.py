@@ -1,5 +1,13 @@
+# streamlit: For building web applications easily.
+# dotenv: To manage environment variables from a .env file.
+# os: For accessing environment variables and other OS features.
+# PIL.Image: For working with images.
+# audio_recorder_streamlit: A package that adds an audio recording widget in Streamlit.
+# base64, BytesIO: Used for encoding and decoding data, and working with binary data.
+# google.generativeai: Google’s Generative AI API for using models like Gemini.
+# random: Generates random numbers.
+# anthropic: Anthropic’s API for using models like Claude.
 import streamlit as st
-from openai import OpenAI
 import dotenv
 import os
 from PIL import Image
@@ -12,7 +20,6 @@ import anthropic
 
 dotenv.load_dotenv()
 
-
 anthropic_models = [
     "claude-3-5-sonnet-20240620"
 ]
@@ -22,16 +29,8 @@ google_models = [
     "gemini-1.5-pro",
 ]
 
-openai_models = [
-    "gpt-4o", 
-    "gpt-4-turbo", 
-    "gpt-3.5-turbo-16k", 
-    "gpt-4", 
-    "gpt-4-32k",
-]
 
-
-# Function to convert the messages format from OpenAI and Streamlit to Gemini
+# Converts messages from OpenAI format to Google’s Gemini model format. Handles different types of content (text, image URLs, video files, audio files).
 def messages_to_gemini(messages):
     gemini_messages = []
     prev_role = None
@@ -62,7 +61,7 @@ def messages_to_gemini(messages):
     return gemini_messages
 
 
-# Function to convert the messages format from OpenAI and Streamlit to Anthropic (the only difference is in the image messages)
+# Similar to messages_to_gemini, but tailored for Anthropic's Claude models. It processes image URLs differently by converting them to base64 format.
 def messages_to_anthropic(messages):
     anthropic_messages = []
     prev_role = None
@@ -97,24 +96,12 @@ def messages_to_anthropic(messages):
     return anthropic_messages
 
 
-# Function to query and stream the response from the LLM
-def stream_llm_response(model_params, model_type="openai", api_key=None):
+# Sends queries to different language models (OpenAI, Google, Anthropic) and streams their responses.
+# Depending on the model_type, the function calls the appropriate API and streams the response in chunks to display in real-time.
+def stream_llm_response(model_params, model_type="google", api_key=None):
     response_message = ""
-
-    if model_type == "openai":
-        client = OpenAI(api_key=api_key)
-        for chunk in client.chat.completions.create(
-            model=model_params["model"] if "model" in model_params else "gpt-4o",
-            messages=st.session_state.messages,
-            temperature=model_params["temperature"] if "temperature" in model_params else 0.3,
-            max_tokens=4096,
-            stream=True,
-        ):
-            chunk_text = chunk.choices[0].delta.content or ""
-            response_message += chunk_text
-            yield chunk_text
-
-    elif model_type == "google":
+    # client = google.google(api_key=api_key)
+    if model_type == "google":
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
             model_name = model_params["model"],
@@ -154,7 +141,7 @@ def stream_llm_response(model_params, model_type="openai", api_key=None):
         ]})
 
 
-# Function to convert file to base64
+# Converts an image to a base64-encoded string to send via APIs that support image uploads.
 def get_image_base64(image_raw):
     buffered = BytesIO()
     image_raw.save(buffered, format=image_raw.format)
@@ -162,11 +149,13 @@ def get_image_base64(image_raw):
 
     return base64.b64encode(img_byte).decode('utf-8')
 
+# file_to_base64: Converts a file to base64 encoding.
 def file_to_base64(file):
     with open(file, "rb") as f:
 
         return base64.b64encode(f.read())
 
+# base64_to_image: Decodes a base64-encoded string back into an image.
 def base64_to_image(base64_string):
     base64_string = base64_string.split(",")[1]
     
@@ -176,37 +165,58 @@ def base64_to_image(base64_string):
 
 def main():
 
+# The core function of the app.
+# Configures the Streamlit page and sets up a chatbot interface. It includes a sidebar to input API keys, select models, and configure the chatbot.
+# Users can upload images, audio, or videos to enhance their chatbot conversations.
+# It allows for multiple AI models to be queried (OpenAI, Google, Anthropic) based on user input.
+
     # --- Page Config ---
     st.set_page_config(
-        page_title="The OmniChat",
-        page_icon="🤖",
+        page_title="fake chat bot",
+        page_icon="👀",
         layout="centered",
         initial_sidebar_state="expanded",
     )
 
     # --- Header ---
-    st.html("""<h1 style="text-align: center; color: #6ca395;">🤖 <i>The OmniChat</i> 💬</h1>""")
+    st.markdown("""
+    <style>
+    @keyframes rainbow {
+        0% { color: red; }
+        16% { color: orange; }
+        32% { color: yellow; }
+        48% { color: green; }
+        64% { color: blue; }
+        80% { color: indigo; }
+        100% { color: violet; }
+    }
+
+    .rainbow-text {
+        font-size: 48px;
+        text-align: center;
+        font-style: bold;
+        animation: rainbow 8s infinite;
+    }
+    </style>
+    <h1 class="rainbow-text">chatlgpt 🏳️‍🌈</h1>
+    """, unsafe_allow_html=True)
+
 
     # --- Side Bar ---
     with st.sidebar:
-        cols_keys = st.columns(2)
+        cols_keys = st.columns(1)
         with cols_keys[0]:
-            default_openai_api_key = os.getenv("OPENAI_API_KEY") if os.getenv("OPENAI_API_KEY") is not None else ""  # only for development environment, otherwise it should return None
-            with st.popover("🔐 OpenAI"):
-                openai_api_key = st.text_input("Introduce your OpenAI API Key (https://platform.openai.com/)", value=default_openai_api_key, type="password")
-        
-        with cols_keys[1]:
             default_google_api_key = os.getenv("GOOGLE_API_KEY") if os.getenv("GOOGLE_API_KEY") is not None else ""  # only for development environment, otherwise it should return None
-            with st.popover("🔐 Google"):
+            with st.popover("Google API"):
                 google_api_key = st.text_input("Introduce your Google API Key (https://aistudio.google.com/app/apikey)", value=default_google_api_key, type="password")
 
         default_anthropic_api_key = os.getenv("ANTHROPIC_API_KEY") if os.getenv("ANTHROPIC_API_KEY") is not None else ""
-        with st.popover("🔐 Anthropic"):
+        with st.popover("Anthropic API"):
             anthropic_api_key = st.text_input("Introduce your Anthropic API Key (https://console.anthropic.com/)", value=default_anthropic_api_key, type="password")
     
     # --- Main Content ---
     # Checking if the user has introduced the OpenAI API Key, if not, a warning is displayed
-    if (openai_api_key == "" or openai_api_key is None or "sk-" not in openai_api_key) and (google_api_key == "" or google_api_key is None) and (anthropic_api_key == "" or anthropic_api_key is None):
+    if (google_api_key == "" or google_api_key is None) and (anthropic_api_key == "" or anthropic_api_key is None):
         st.write("#")
         st.warning("⬅️ Please introduce an API Key to continue...")
 
@@ -214,15 +224,13 @@ def main():
             st.write("#")
             st.write("#")
         #     st.video("https://www.youtube.com/watch?v=7i9j8M_zidA")
-        #     st.write("📋[Medium Blog: OpenAI GPT-4o](https://medium.com/@enricdomingo/code-the-omnichat-app-integrating-gpt-4o-your-python-chatgpt-d399b90d178e)")
+        #     st.write("📋[Medium Blog: OpenAI GPT-4o](     )")
         #     st.video("https://www.youtube.com/watch?v=1IQmWVFNQEs")
         #     st.write("📋[Medium Blog: Google Gemini](https://medium.com/@enricdomingo/how-i-add-gemini-1-5-pro-api-to-my-app-chat-with-videos-images-and-audios-f42171606143)")
         #     st.video("https://www.youtube.com/watch?v=kXIOazjgV-8")
         #     st.write("📋[Medium Blog: Anthropic Claude 3.5](https://medium.com/p/7ec4623e2dac)")
 
     else:
-        client = OpenAI(api_key=openai_api_key)
-
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
@@ -244,23 +252,22 @@ def main():
 
             st.divider()
             
-            available_models = [] + (anthropic_models if anthropic_api_key else []) + (google_models if google_api_key else []) + (openai_models if openai_api_key else [])
+            available_models = [] + (anthropic_models if anthropic_api_key else []) + (google_models if google_api_key else [])
             model = st.selectbox("Select a model:", available_models, index=0)
             model_type = None
-            if model.startswith("gpt"): model_type = "openai"
-            elif model.startswith("gemini"): model_type = "google"
+            if model.startswith("gemini"): model_type = "google"
             elif model.startswith("claude"): model_type = "anthropic"
             
-            with st.popover("⚙️ Model parameters"):
+            with st.popover("Model parameters"):
                 model_temp = st.slider("Temperature", min_value=0.0, max_value=2.0, value=0.3, step=0.1)
 
-            audio_response = st.toggle("Audio response", value=False)
-            if audio_response:
-                cols = st.columns(2)
-                with cols[0]:
-                    tts_voice = st.selectbox("Select a voice:", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"])
-                with cols[1]:
-                    tts_model = st.selectbox("Select a model:", ["tts-1", "tts-1-hd"], index=1)
+            # audio_response = st.toggle("Audio response", value=False)
+            # if audio_response:
+            #     cols = st.columns(2)
+            #     with cols[0]:
+            #         tts_voice = st.selectbox("Select a voice:", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"])
+            #     with cols[1]:
+            #         tts_model = st.selectbox("Select a model:", ["tts-1", "tts-1-hd"], index=1)
 
             model_params = {
                 "model": model,
@@ -279,9 +286,9 @@ def main():
             st.divider()
 
             # Image Upload
-            if model in ["gpt-4o", "gpt-4-turbo", "gemini-1.5-flash", "gemini-1.5-pro", "claude-3-5-sonnet-20240620"]:
+            if model in ["gemini-1.5-flash", "gemini-1.5-pro", "claude-3-5-sonnet-20240620"]:
                     
-                st.write(f"### **🖼️ Add an image{' or a video file' if model_type=='google' else ''}:**")
+                st.write(f"### **Add an image{' 'if model_type=='google' else ''}:**")
 
                 def add_image_to_messages():
                     if st.session_state.uploaded_img or ("camera_img" in st.session_state and st.session_state.camera_img):
@@ -325,19 +332,9 @@ def main():
                             on_change=add_image_to_messages,
                         )
 
-                with cols_img[1]:                    
-                    with st.popover("📸 Camera"):
-                        activate_camera = st.checkbox("Activate camera")
-                        if activate_camera:
-                            st.camera_input(
-                                "Take a picture", 
-                                key="camera_img",
-                                on_change=add_image_to_messages,
-                            )
-
             # Audio Upload
             st.write("#")
-            st.write(f"### **🎤 Add an audio{' (Speech To Text)' if model_type == 'openai' else ''}:**")
+            st.write(f"### **Add an audio{' (Speech To Text)' if model_type == 'google' else ''}:**")
 
             audio_prompt = None
             audio_file_added = False
@@ -374,14 +371,6 @@ def main():
                     audio_file_added = True
 
             st.divider()
-            # st.video("https://www.youtube.com/watch?v=7i9j8M_zidA")
-            # st.write("📋[Medium Blog: OpenAI GPT-4o](https://medium.com/@enricdomingo/code-the-omnichat-app-integrating-gpt-4o-your-python-chatgpt-d399b90d178e)")
-            # st.video("https://www.youtube.com/watch?v=1IQmWVFNQEs")
-            # st.write("📋[Medium Blog: Google Gemini](https://medium.com/@enricdomingo/how-i-add-gemini-1-5-pro-api-to-my-app-chat-with-videos-images-and-audios-f42171606143)")
-            # st.video("https://www.youtube.com/watch?v=kXIOazjgV-8")
-            # st.write("📋[Medium Blog: Anthropic Claude 3.5](https://medium.com/p/7ec4623e2dac)")
-
-
 
         # Chat input
         if prompt := st.chat_input("Hi! Ask me anything...") or audio_prompt or audio_file_added:
@@ -407,7 +396,6 @@ def main():
 
             with st.chat_message("assistant"):
                 model2key = {
-                    "openai": openai_api_key,
                     "google": google_api_key,
                     "anthropic": anthropic_api_key,
                 }
@@ -420,19 +408,19 @@ def main():
                 )
 
             # --- Added Audio Response (optional) ---
-            if audio_response:
-                response =  client.audio.speech.create(
-                    model=tts_model,
-                    voice=tts_voice,
-                    input=st.session_state.messages[-1]["content"][0]["text"],
-                )
-                audio_base64 = base64.b64encode(response.content).decode('utf-8')
-                audio_html = f"""
-                <audio controls autoplay>
-                    <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
-                </audio>
-                """
-                st.html(audio_html)
+            # if audio_response:
+            #     response =  client.audio.speech.create(
+            #         model=tts_model,
+            #         voice=tts_voice,
+            #         input=st.session_state.messages[-1]["content"][0]["text"],
+            #     )
+            #     audio_base64 = base64.b64encode(response.content).decode('utf-8')
+            #     audio_html = f"""
+            #     <audio controls autoplay>
+            #         <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
+            #     </audio>
+            #     """
+            #     st.html(audio_html)
 
 
 
