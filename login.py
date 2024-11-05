@@ -1,12 +1,8 @@
-# streamlit: For building web applications easily.
-# dotenv: To manage environment variables from a .env file.
-# os: For accessing environment variables and other OS features.
-# PIL.Image: For working with images.
-# audio_recorder_streamlit: A package that adds an audio recording widget in Streamlit.
-# base64, BytesIO: Used for encoding and decoding data, and working with binary data.
-# google.generativeai: Google’s Generative AI API for using models like Gemini.
-# random: Generates random numbers.
-# anthropic: Anthropic’s API for using models like Claude.
+import streamlit as st
+import os
+import sqlite3
+import dotenv
+
 import streamlit as st
 import dotenv
 import os
@@ -19,6 +15,87 @@ import random
 import anthropic
 
 dotenv.load_dotenv()
+
+
+# Initialize SQLite database connection
+def init_db():
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE NOT NULL,
+                        password TEXT NOT NULL)"""
+    )
+    conn.commit()
+    conn.close()
+
+
+# Function to add a new user to the database
+def add_user(username, password):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)", (username, password)
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        st.error("Username already exists!")
+    finally:
+        conn.close()
+
+
+# Function to validate user login
+def validate_login(username, password):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM users WHERE username = ? AND password = ?", (username, password)
+    )
+    user = cursor.fetchone()
+    conn.close()
+    if user:
+        return True
+    return False
+
+
+# Login page function
+def login_page():
+    st.title("Login")
+
+    # Login form
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        login_button = st.form_submit_button("Login")
+
+    # If login button is pressed
+    if login_button:
+        if validate_login(username, password):
+            st.success("Login successful!")
+            st.session_state["logged_in"] = True
+            st.session_state["username"] = username
+            st.rerun()  # Rerun to switch to the app page
+        else:
+            st.error("Invalid username or password.")
+
+
+# Register page function
+def register_page():
+    st.title("Register")
+
+    with st.form("register_form"):
+        new_username = st.text_input("New Username")
+        new_password = st.text_input("New Password", type="password")
+        register_button = st.form_submit_button("Register")
+
+    if register_button:
+        if new_username and new_password:
+            add_user(new_username, new_password)
+            st.success("Registration successful! You can now login.")
+        else:
+            st.error("Please fill both fields.")
 
 anthropic_models = ["claude-3-5-sonnet-20240620"]
 
@@ -178,19 +255,211 @@ def base64_to_image(base64_string):
 
     return Image.open(BytesIO(base64.b64decode(base64_string)))
 
+# Main function with login check and page navigation
 def main():
+    init_db()
+
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+
+    if st.session_state["logged_in"]:
+        st.set_page_config(
+            page_title="fake chat bot",
+            page_icon="👀",
+            layout="centered",
+            initial_sidebar_state="expanded",
+        )
+        app_page()  # Call the app function when logged in
+    else:
+        if "page" not in st.session_state:
+            st.session_state["page"] = "login"
+
+        if st.session_state["page"] == "login":
+            login_page()
+            if st.button("Go to Register"):
+                st.session_state["page"] = "register"
+                st.rerun()  # Force rerun to update the page immediately
+        elif st.session_state["page"] == "register":
+            register_page()
+            if st.button("Go to Login"):
+                st.session_state["page"] = "login"
+                st.rerun()  # Force rerun to update the page immediately
+
+
+anthropic_models = ["claude-3-5-sonnet-20240620"]
+
+google_models = [
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+
+
+# Converts messages from OpenAI format to Google’s Gemini model format. Handles different types of content (text, image URLs, video files, audio files).
+def messages_to_gemini(messages):
+    gemini_messages = []
+    prev_role = None
+    for message in messages:
+        if prev_role and (prev_role == message["role"]):
+            gemini_message = gemini_messages[-1]
+        else:
+            gemini_message = {
+                "role": "model" if message["role"] == "assistant" else "user",
+                "parts": [],
+            }
+
+        for content in message["content"]:
+            if content["type"] == "text":
+                gemini_message["parts"].append(content["text"])
+            elif content["type"] == "image_url":
+                gemini_message["parts"].append(
+                    base64_to_image(content["image_url"]["url"])
+                )
+            elif content["type"] == "video_file":
+                gemini_message["parts"].append(genai.upload_file(content["video_file"]))
+            elif content["type"] == "audio_file":
+                gemini_message["parts"].append(genai.upload_file(content["audio_file"]))
+
+        if prev_role != message["role"]:
+            gemini_messages.append(gemini_message)
+
+        prev_role = message["role"]
+
+    return gemini_messages
+
+
+# Similar to messages_to_gemini, but tailored for Anthropic's Claude models. It processes image URLs differently by converting them to base64 format.
+def messages_to_anthropic(messages):
+    anthropic_messages = []
+    prev_role = None
+    for message in messages:
+        if prev_role and (prev_role == message["role"]):
+            anthropic_message = anthropic_messages[-1]
+        else:
+            anthropic_message = {
+                "role": message["role"],
+                "content": [],
+            }
+        if message["content"][0]["type"] == "image_url":
+            anthropic_message["content"].append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": message["content"][0]["image_url"]["url"]
+                        .split(";")[0]
+                        .split(":")[1],
+                        "data": message["content"][0]["image_url"]["url"].split(",")[1],
+                        # f"data:{img_type};base64,{img}"
+                    },
+                }
+            )
+        else:
+            anthropic_message["content"].append(message["content"][0])
+
+        if prev_role != message["role"]:
+            anthropic_messages.append(anthropic_message)
+
+        prev_role = message["role"]
+
+    return anthropic_messages
+
+
+# Sends queries to different language models (OpenAI, Google, Anthropic) and streams their responses.
+# Depending on the model_type, the function calls the appropriate API and streams the response in chunks to display in real-time.
+def stream_llm_response(model_params, model_type="google", api_key=None):
+    response_message = ""
+    # client = google.google(api_key=api_key)
+    if model_type == "google":
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            model_name=model_params["model"],
+            generation_config={
+                "temperature": (
+                    model_params["temperature"]
+                    if "temperature" in model_params
+                    else 0.3
+                ),
+            },
+        )
+        gemini_messages = messages_to_gemini(st.session_state.messages)
+
+        for chunk in model.generate_content(
+            contents=gemini_messages,
+            stream=True,
+        ):
+            chunk_text = chunk.text or ""
+            response_message += chunk_text
+            yield chunk_text
+
+    elif model_type == "anthropic":
+        client = anthropic.Anthropic(api_key=api_key)
+        with client.messages.stream(
+            model=(
+                model_params["model"]
+                if "model" in model_params
+                else "claude-3-5-sonnet-20240620"
+            ),
+            messages=messages_to_anthropic(st.session_state.messages),
+            temperature=(
+                model_params["temperature"] if "temperature" in model_params else 0.3
+            ),
+            max_tokens=4096,
+        ) as stream:
+            for text in stream.text_stream:
+                response_message += text
+                yield text
+
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": response_message,
+                }
+            ],
+        }
+    )
+
+
+# Converts an image to a base64-encoded string to send via APIs that support image uploads.
+def get_image_base64(image_raw):
+    buffered = BytesIO()
+    image_raw.save(buffered, format=image_raw.format)
+    img_byte = buffered.getvalue()
+
+    return base64.b64encode(img_byte).decode("utf-8")
+
+
+# file_to_base64: Converts a file to base64 encoding.
+def file_to_base64(file):
+    with open(file, "rb") as f:
+
+        return base64.b64encode(f.read())
+
+
+# base64_to_image: Decodes a base64-encoded string back into an image.
+def base64_to_image(base64_string):
+    base64_string = base64_string.split(",")[1]
+
+    return Image.open(BytesIO(base64.b64decode(base64_string)))
+
+
+# App content (from app.py)
+def app_page():
+
     # The core function of the app.
     # Configures the Streamlit page and sets up a chatbot interface. It includes a sidebar to input API keys, select models, and configure the chatbot.
     # Users can upload images, audio, or videos to enhance their chatbot conversations.
     # It allows for multiple AI models to be queried (OpenAI, Google, Anthropic) based on user input.
 
     # --- Page Config ---
-    st.set_page_config(
-        page_title="fake chat bot",
-        page_icon="👀",
-        layout="centered",
-        initial_sidebar_state="expanded",
-    )
+    # st.set_page_config(
+    #     page_title="fake chat bot",
+    #     page_icon="👀",
+    #     layout="centered",
+    #     initial_sidebar_state="expanded",
+    # )
 
     # --- Header ---
     st.markdown(
@@ -213,13 +482,15 @@ def main():
         animation: rainbow 8s infinite;
     }
     </style>
-    <h1 class="rainbow-text">chatlgpt 🏳️‍🌈</h1>
+    <h1 class="rainbow-text">chatgpt</h1>
     """,
         unsafe_allow_html=True,
     )
 
     # --- Side Bar ---
     with st.sidebar:
+        st.title(f"Welcome, {st.session_state['username']}!")
+
         cols_keys = st.columns(1)
         with cols_keys[0]:
             default_google_api_key = (
@@ -500,3 +771,7 @@ def main():
             #     </audio>
             #     """
             #     st.html(audio_html)
+
+
+if __name__ == "__main__":
+    main()
