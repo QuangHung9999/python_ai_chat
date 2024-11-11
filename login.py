@@ -264,7 +264,7 @@ def main():
 
     if st.session_state["logged_in"]:
         st.set_page_config(
-            page_title="fake chat bot",
+            page_title="NotGPT",
             page_icon="👀",
             layout="centered",
             initial_sidebar_state="expanded",
@@ -448,19 +448,6 @@ def base64_to_image(base64_string):
 # App content (from app.py)
 def app_page():
 
-    # The core function of the app.
-    # Configures the Streamlit page and sets up a chatbot interface. It includes a sidebar to input API keys, select models, and configure the chatbot.
-    # Users can upload images, audio, or videos to enhance their chatbot conversations.
-    # It allows for multiple AI models to be queried (OpenAI, Google, Anthropic) based on user input.
-
-    # --- Page Config ---
-    # st.set_page_config(
-    #     page_title="fake chat bot",
-    #     page_icon="👀",
-    #     layout="centered",
-    #     initial_sidebar_state="expanded",
-    # )
-
     # --- Header ---
     st.markdown(
         """
@@ -482,15 +469,34 @@ def app_page():
         animation: rainbow 8s infinite;
     }
     </style>
-    <h1 class="rainbow-text">chatgpt</h1>
+    <h1 class="rainbow-text">NotGPT</h1>
     """,
         unsafe_allow_html=True,
     )
 
     # --- Side Bar ---
     with st.sidebar:
-        st.title(f"Welcome, {st.session_state['username']}!")
+        # Create a horizontal layout with two elements: the welcome message and logout button
+        cols = st.columns([4, 1])  # Adjust the column ratios as needed
 
+        # Welcome title
+        with cols[0]:
+            st.title(f"Welcome, {st.session_state['username']}!")
+            if st.button("Logout"):
+                # Clear the session state for logging out
+                st.session_state.clear()
+                st.experimental_rerun()  # Rerun the app after logout to refresh
+
+        # # Logout button
+        # with cols[1]:
+        #     if st.button("Logout"):
+        #         # Clear the session state for logging out
+        #         st.session_state.clear()
+        #         st.experimental_rerun()  # Rerun the app after logout to refresh
+        
+        st.divider()
+        
+        # Other sidebar elements
         cols_keys = st.columns(1)
         with cols_keys[0]:
             default_google_api_key = (
@@ -528,12 +534,6 @@ def app_page():
         with st.sidebar:
             st.write("#")
             st.write("#")
-        #     st.video("https://www.youtube.com/watch?v=7i9j8M_zidA")
-        #     st.write("📋[Medium Blog: OpenAI GPT-4o](     )")
-        #     st.video("https://www.youtube.com/watch?v=1IQmWVFNQEs")
-        #     st.write("📋[Medium Blog: Google Gemini](https://medium.com/@enricdomingo/how-i-add-gemini-1-5-pro-api-to-my-app-chat-with-videos-images-and-audios-f42171606143)")
-        #     st.video("https://www.youtube.com/watch?v=kXIOazjgV-8")
-        #     st.write("📋[Medium Blog: Anthropic Claude 3.5](https://medium.com/p/7ec4623e2dac)")
 
     else:
         if "messages" not in st.session_state:
@@ -573,14 +573,6 @@ def app_page():
                 model_temp = st.slider(
                     "Temperature", min_value=0.0, max_value=2.0, value=0.3, step=0.1
                 )
-
-            # audio_response = st.toggle("Audio response", value=False)
-            # if audio_response:
-            #     cols = st.columns(2)
-            #     with cols[0]:
-            #         tts_voice = st.selectbox("Select a voice:", ["alloy", "echo", "fable", "onyx", "nova", "shimmer"])
-            #     with cols[1]:
-            #         tts_model = st.selectbox("Select a model:", ["tts-1", "tts-1-hd"], index=1)
 
             model_params = {
                 "model": model,
@@ -756,22 +748,6 @@ def app_page():
                         api_key=model2key[model_type],
                     )
                 )
-
-            # --- Added Audio Response (optional) ---
-            # if audio_response:
-            #     response =  client.audio.speech.create(
-            #         model=tts_model,
-            #         voice=tts_voice,
-            #         input=st.session_state.messages[-1]["content"][0]["text"],
-            #     )
-            #     audio_base64 = base64.b64encode(response.content).decode('utf-8')
-            #     audio_html = f"""
-            #     <audio controls autoplay>
-            #         <source src="data:audio/wav;base64,{audio_base64}" type="audio/mp3">
-            #     </audio>
-            #     """
-            #     st.html(audio_html)
-
 
 if __name__ == "__main__":
     main()
