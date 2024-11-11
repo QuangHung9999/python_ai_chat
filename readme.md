@@ -10,4 +10,4 @@ git clone it
 
 `pip install -r requirements.txt`
 
-`streamlit run login.py`
+`streamlit run app.py`
