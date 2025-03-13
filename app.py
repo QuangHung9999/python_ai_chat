@@ -2,17 +2,12 @@ import streamlit as st
 import os
 import sqlite3
 import dotenv
-
-import streamlit as st
-import dotenv
-import os
 from PIL import Image
 from audio_recorder_streamlit import audio_recorder
 import base64
 from io import BytesIO
 import google.generativeai as genai
 import random
-import anthropic
 
 dotenv.load_dotenv()
 
@@ -97,12 +92,8 @@ def register_page():
         else:
             st.error("Please fill both fields.")
 
-anthropic_models = ["claude-3-5-sonnet-20240620"]
 
-google_models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-]
+google_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
 
 
 # Converts messages from OpenAI format to Google’s Gemini model format. Handles different types of content (text, image URLs, video files, audio files).
@@ -138,87 +129,28 @@ def messages_to_gemini(messages):
     return gemini_messages
 
 
-# Similar to messages_to_gemini, but tailored for Anthropic's Claude models. It processes image URLs differently by converting them to base64 format.
-def messages_to_anthropic(messages):
-    anthropic_messages = []
-    prev_role = None
-    for message in messages:
-        if prev_role and (prev_role == message["role"]):
-            anthropic_message = anthropic_messages[-1]
-        else:
-            anthropic_message = {
-                "role": message["role"],
-                "content": [],
-            }
-        if message["content"][0]["type"] == "image_url":
-            anthropic_message["content"].append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": message["content"][0]["image_url"]["url"]
-                        .split(";")[0]
-                        .split(":")[1],
-                        "data": message["content"][0]["image_url"]["url"].split(",")[1],
-                        # f"data:{img_type};base64,{img}"
-                    },
-                }
-            )
-        else:
-            anthropic_message["content"].append(message["content"][0])
-
-        if prev_role != message["role"]:
-            anthropic_messages.append(anthropic_message)
-
-        prev_role = message["role"]
-
-    return anthropic_messages
-
-
-# Sends queries to different language models (OpenAI, Google, Anthropic) and streams their responses.
+# Sends queries to different language models (gemini) and streams their responses.
 # Depending on the model_type, the function calls the appropriate API and streams the response in chunks to display in real-time.
 def stream_llm_response(model_params, model_type="google", api_key=None):
     response_message = ""
-    # client = google.google(api_key=api_key)
-    if model_type == "google":
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name=model_params["model"],
-            generation_config={
-                "temperature": (
-                    model_params["temperature"]
-                    if "temperature" in model_params
-                    else 0.3
-                ),
-            },
-        )
-        gemini_messages = messages_to_gemini(st.session_state.messages)
-
-        for chunk in model.generate_content(
-            contents=gemini_messages,
-            stream=True,
-        ):
-            chunk_text = chunk.text or ""
-            response_message += chunk_text
-            yield chunk_text
-
-    elif model_type == "anthropic":
-        client = anthropic.Anthropic(api_key=api_key)
-        with client.messages.stream(
-            model=(
-                model_params["model"]
-                if "model" in model_params
-                else "claude-3-5-sonnet-20240620"
-            ),
-            messages=messages_to_anthropic(st.session_state.messages),
-            temperature=(
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(
+        model_name=model_params["model"],
+        generation_config={
+            "temperature": (
                 model_params["temperature"] if "temperature" in model_params else 0.3
             ),
-            max_tokens=4096,
-        ) as stream:
-            for text in stream.text_stream:
-                response_message += text
-                yield text
+        },
+    )
+    gemini_messages = messages_to_gemini(st.session_state.messages)
+
+    for chunk in model.generate_content(
+        contents=gemini_messages,
+        stream=True,
+    ):
+        chunk_text = chunk.text or ""
+        response_message += chunk_text
+        yield chunk_text
 
     st.session_state.messages.append(
         {
@@ -245,209 +177,17 @@ def get_image_base64(image_raw):
 # file_to_base64: Converts a file to base64 encoding.
 def file_to_base64(file):
     with open(file, "rb") as f:
-
         return base64.b64encode(f.read())
 
 
 # base64_to_image: Decodes a base64-encoded string back into an image.
 def base64_to_image(base64_string):
     base64_string = base64_string.split(",")[1]
-
-    return Image.open(BytesIO(base64.b64decode(base64_string)))
-
-# Main function with login check and page navigation
-def main():
-    init_db()
-
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
-
-    if st.session_state["logged_in"]:
-        st.set_page_config(
-            page_title="NotGPT",
-            page_icon="👀",
-            layout="centered",
-            initial_sidebar_state="expanded",
-        )
-        app_page()  # Call the app function when logged in
-    else:
-        if "page" not in st.session_state:
-            st.session_state["page"] = "login"
-
-        if st.session_state["page"] == "login":
-            login_page()
-            if st.button("Go to Register"):
-                st.session_state["page"] = "register"
-                st.rerun()  # Force rerun to update the page immediately
-        elif st.session_state["page"] == "register":
-            register_page()
-            if st.button("Go to Login"):
-                st.session_state["page"] = "login"
-                st.rerun()  # Force rerun to update the page immediately
-
-
-anthropic_models = ["claude-3-5-sonnet-20240620"]
-
-google_models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-]
-
-
-# Converts messages from OpenAI format to Google’s Gemini model format. Handles different types of content (text, image URLs, video files, audio files).
-def messages_to_gemini(messages):
-    gemini_messages = []
-    prev_role = None
-    for message in messages:
-        if prev_role and (prev_role == message["role"]):
-            gemini_message = gemini_messages[-1]
-        else:
-            gemini_message = {
-                "role": "model" if message["role"] == "assistant" else "user",
-                "parts": [],
-            }
-
-        for content in message["content"]:
-            if content["type"] == "text":
-                gemini_message["parts"].append(content["text"])
-            elif content["type"] == "image_url":
-                gemini_message["parts"].append(
-                    base64_to_image(content["image_url"]["url"])
-                )
-            elif content["type"] == "video_file":
-                gemini_message["parts"].append(genai.upload_file(content["video_file"]))
-            elif content["type"] == "audio_file":
-                gemini_message["parts"].append(genai.upload_file(content["audio_file"]))
-
-        if prev_role != message["role"]:
-            gemini_messages.append(gemini_message)
-
-        prev_role = message["role"]
-
-    return gemini_messages
-
-
-# Similar to messages_to_gemini, but tailored for Anthropic's Claude models. It processes image URLs differently by converting them to base64 format.
-def messages_to_anthropic(messages):
-    anthropic_messages = []
-    prev_role = None
-    for message in messages:
-        if prev_role and (prev_role == message["role"]):
-            anthropic_message = anthropic_messages[-1]
-        else:
-            anthropic_message = {
-                "role": message["role"],
-                "content": [],
-            }
-        if message["content"][0]["type"] == "image_url":
-            anthropic_message["content"].append(
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": message["content"][0]["image_url"]["url"]
-                        .split(";")[0]
-                        .split(":")[1],
-                        "data": message["content"][0]["image_url"]["url"].split(",")[1],
-                        # f"data:{img_type};base64,{img}"
-                    },
-                }
-            )
-        else:
-            anthropic_message["content"].append(message["content"][0])
-
-        if prev_role != message["role"]:
-            anthropic_messages.append(anthropic_message)
-
-        prev_role = message["role"]
-
-    return anthropic_messages
-
-
-# Sends queries to different language models (OpenAI, Google, Anthropic) and streams their responses.
-# Depending on the model_type, the function calls the appropriate API and streams the response in chunks to display in real-time.
-def stream_llm_response(model_params, model_type="google", api_key=None):
-    response_message = ""
-    # client = google.google(api_key=api_key)
-    if model_type == "google":
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name=model_params["model"],
-            generation_config={
-                "temperature": (
-                    model_params["temperature"]
-                    if "temperature" in model_params
-                    else 0.3
-                ),
-            },
-        )
-        gemini_messages = messages_to_gemini(st.session_state.messages)
-
-        for chunk in model.generate_content(
-            contents=gemini_messages,
-            stream=True,
-        ):
-            chunk_text = chunk.text or ""
-            response_message += chunk_text
-            yield chunk_text
-
-    elif model_type == "anthropic":
-        client = anthropic.Anthropic(api_key=api_key)
-        with client.messages.stream(
-            model=(
-                model_params["model"]
-                if "model" in model_params
-                else "claude-3-5-sonnet-20240620"
-            ),
-            messages=messages_to_anthropic(st.session_state.messages),
-            temperature=(
-                model_params["temperature"] if "temperature" in model_params else 0.3
-            ),
-            max_tokens=4096,
-        ) as stream:
-            for text in stream.text_stream:
-                response_message += text
-                yield text
-
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "text",
-                    "text": response_message,
-                }
-            ],
-        }
-    )
-
-
-# Converts an image to a base64-encoded string to send via APIs that support image uploads.
-def get_image_base64(image_raw):
-    buffered = BytesIO()
-    image_raw.save(buffered, format=image_raw.format)
-    img_byte = buffered.getvalue()
-
-    return base64.b64encode(img_byte).decode("utf-8")
-
-
-# file_to_base64: Converts a file to base64 encoding.
-def file_to_base64(file):
-    with open(file, "rb") as f:
-
-        return base64.b64encode(f.read())
-
-
-# base64_to_image: Decodes a base64-encoded string back into an image.
-def base64_to_image(base64_string):
-    base64_string = base64_string.split(",")[1]
-
     return Image.open(BytesIO(base64.b64decode(base64_string)))
 
 
 # App content (from app.py)
 def app_page():
-
     # --- Header ---
     st.markdown(
         """
@@ -487,15 +227,8 @@ def app_page():
                 st.session_state.clear()
                 st.experimental_rerun()  # Rerun the app after logout to refresh
 
-        # # Logout button
-        # with cols[1]:
-        #     if st.button("Logout"):
-        #         # Clear the session state for logging out
-        #         st.session_state.clear()
-        #         st.experimental_rerun()  # Rerun the app after logout to refresh
-        
         st.divider()
-        
+
         # Other sidebar elements
         cols_keys = st.columns(1)
         with cols_keys[0]:
@@ -511,23 +244,9 @@ def app_page():
                     type="password",
                 )
 
-        default_anthropic_api_key = (
-            os.getenv("ANTHROPIC_API_KEY")
-            if os.getenv("ANTHROPIC_API_KEY") is not None
-            else ""
-        )
-        with st.popover("Anthropic API"):
-            anthropic_api_key = st.text_input(
-                "Introduce your Anthropic API Key (https://console.anthropic.com/)",
-                value=default_anthropic_api_key,
-                type="password",
-            )
-
     # --- Main Content ---
     # Checking if the user has introduced the OpenAI API Key, if not, a warning is displayed
-    if (google_api_key == "" or google_api_key is None) and (
-        anthropic_api_key == "" or anthropic_api_key is None
-    ):
+    if google_api_key == "" or google_api_key is None:
         st.write("#")
         st.warning("⬅️ Please introduce an API Key to continue...")
 
@@ -554,20 +273,10 @@ def app_page():
 
         # Side bar model options and inputs
         with st.sidebar:
-
             st.divider()
-
-            available_models = (
-                []
-                + (anthropic_models if anthropic_api_key else [])
-                + (google_models if google_api_key else [])
-            )
+            available_models = google_models if google_api_key else []
             model = st.selectbox("Select a model:", available_models, index=0)
-            model_type = None
-            if model.startswith("gemini"):
-                model_type = "google"
-            elif model.startswith("claude"):
-                model_type = "anthropic"
+            model_type = "google"
 
             with st.popover("Model parameters"):
                 model_temp = st.slider(
@@ -599,7 +308,6 @@ def app_page():
                 "gemini-1.5-pro",
                 "claude-3-5-sonnet-20240620",
             ]:
-
                 st.write(f"### **Add an image{' 'if model_type=='google' else ''}:**")
 
                 def add_image_to_messages():
@@ -660,6 +368,8 @@ def app_page():
                             on_change=add_image_to_messages,
                         )
 
+            st.divider()
+
             # Audio Upload
             st.write("#")
             st.write(
@@ -708,6 +418,41 @@ def app_page():
 
             st.divider()
 
+            # Chat History
+            st.write("#")
+            st.write("### **Chat History :**")
+
+            if st.session_state.messages:
+                # Show a condensed version of the chat history
+                msg_count = len(st.session_state.messages)
+                st.write(f"Total messages: {msg_count}")
+                
+                # Group messages by role and count them
+                user_msgs = sum(1 for msg in st.session_state.messages if msg["role"] == "user")
+                assistant_msgs = sum(1 for msg in st.session_state.messages if msg["role"] == "assistant")
+                
+                st.write(f"User messages: {user_msgs}")
+                st.write(f"Assistant messages: {assistant_msgs}")
+                
+                # Option to expand and see full history
+                with st.expander("View Full History"):
+                    for i, message in enumerate(st.session_state.messages):
+                        st.write(f"**{message['role'].capitalize()} ({i+1}/{msg_count}):**")
+                        for content in message["content"]:
+                            if content["type"] == "text":
+                                st.write(content["text"])
+                            elif content["type"] == "image_url":
+                                st.image(content["image_url"]["url"], width=150)
+                            elif content["type"] == "video_file":
+                                st.video(content["video_file"])
+                            elif content["type"] == "audio_file":
+                                st.audio(content["audio_file"])
+                        st.divider()
+            else:
+                st.write("No chat history available.")
+
+            st.divider()
+
         # Chat input
         if (
             prompt := st.chat_input("Hi! Ask me anything...")
@@ -739,7 +484,6 @@ def app_page():
             with st.chat_message("assistant"):
                 model2key = {
                     "google": google_api_key,
-                    "anthropic": anthropic_api_key,
                 }
                 st.write_stream(
                     stream_llm_response(
@@ -748,6 +492,38 @@ def app_page():
                         api_key=model2key[model_type],
                     )
                 )
+
+
+# Main function with login check and page navigation
+def main():
+    init_db()
+
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+
+    if st.session_state["logged_in"]:
+        st.set_page_config(
+            page_title="NotGPT",
+            page_icon="👀",
+            layout="centered",
+            initial_sidebar_state="expanded",
+        )
+        app_page()  # Call the app function when logged in
+    else:
+        if "page" not in st.session_state:
+            st.session_state["page"] = "login"
+
+        if st.session_state["page"] == "login":
+            login_page()
+            if st.button("Go to Register"):
+                st.session_state["page"] = "register"
+                st.rerun()  # Force rerun to update the page immediately
+        elif st.session_state["page"] == "register":
+            register_page()
+            if st.button("Go to Login"):
+                st.session_state["page"] = "login"
+                st.rerun()  # Force rerun to update the page immediately
+
 
 if __name__ == "__main__":
     main()
